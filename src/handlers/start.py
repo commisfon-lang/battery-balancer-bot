@@ -1,0 +1,27 @@
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработчик команды /start"""
+    keyboard = [
+        [InlineKeyboardButton("⚙️ Настроить конфигурацию", callback_data="config_main")],
+        [InlineKeyboardButton("🔧 Быстрая настройка", callback_data="config_quick")],
+        [InlineKeyboardButton("ℹ️ Помощь", callback_data="help_main")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    welcome_text = """
+🔋 Добро пожаловать в Battery Balancer Bot!
+
+Этот бот поможет вам настроить параметры балансировки аккумуляторных батарей.
+
+Основные функции:
+• ⚙️ Настройка конфигурации балансировки
+• 🔧 Быстрая настройка для стандартных сценариев
+• 📊 Мониторинг параметров
+• ℹ️ Подробная помощь
+
+Выберите действие:
+    """
+    
+    await update.message.reply_text(welcome_text, reply_markup=reply_markup)
