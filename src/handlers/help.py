@@ -1,18 +1,35 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+import logging
+
+logger = logging.getLogger(__name__)
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик команды /help"""
-    keyboard = [
-        [InlineKeyboardButton("📖 Основные команды", callback_data="help_commands")],
-        [InlineKeyboardButton("🔧 Настройка", callback_data="help_setup")],
-        [InlineKeyboardButton("⚠️ Безопасность", callback_data="help_safety")],
-        [InlineKeyboardButton("⬅️ На главную", callback_data="help_back")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text(
-        "ℹ️ Помощь по использованию бота:\n\n"
-        "Выберите раздел помощи:",
-        reply_markup=reply_markup
-    )
+    try:
+        help_text = """
+ℹ️ **Помощь по использованию бота**
+
+**Основные команды:**
+/start - Начать работу с ботом
+/config - Настройка параметров балансировки  
+/help - Получить помощь
+
+**Быстрая настройка:**
+Выберите тип аккумулятора для автоматической настройки всех параметров.
+
+**Ручная настройка:**
+Настройте каждый параметр отдельно для точного контроля.
+
+**Поддерживаемые типы аккумуляторов:**
+• Li-ion (3.7V)
+• LiPo (3.7V) 
+• LiFePO4 (3.2V)
+• NiMH (1.2V)
+        """
+        
+        await update.message.reply_text(help_text)
+        
+    except Exception as e:
+        logger.error(f"Ошибка в help handler: {e}")
+        await update.message.reply_text("❌ Произошла ошибка при показе помощи")

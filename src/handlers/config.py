@@ -1,69 +1,79 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+import logging
+
+logger = logging.getLogger(__name__)
 
 async def config_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик команды /config"""
-    keyboard = [
-        [InlineKeyboardButton("🔋 Тип аккумулятора", callback_data="config_battery_type")],
-        [InlineKeyboardButton("⚡ Напряжение", callback_data="config_voltage")],
-        [InlineKeyboardButton("🔢 Количество элементов", callback_data="config_cell_count")],
-        [InlineKeyboardButton("⬅️ Назад", callback_data="config_back")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text(
-        "⚙️ Настройка конфигурации балансировки:\n\n"
-        "Выберите параметр для настройки:",
-        reply_markup=reply_markup
-    )
+    try:
+        keyboard = [
+            [InlineKeyboardButton("🔋 Тип аккумулятора", callback_data="battery_type")],
+            [InlineKeyboardButton("⚡ Напряжение", callback_data="voltage")],
+            [InlineKeyboardButton("🔧 Быстрая настройка", callback_data="quick_setup")],
+            [InlineKeyboardButton("⬅️ На главную", callback_data="main_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            "⚙️ Настройка конфигурации балансировки:\n\n"
+            "Выберите параметр для настройки:",
+            reply_markup=reply_markup
+        )
+    except Exception as e:
+        logger.error(f"Ошибка в config_handler: {e}")
+        await update.message.reply_text("❌ Произошла ошибка при обработке команды")
 
 async def config_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обработчик кнопок конфигурации"""
+    """Обработчик кнопок"""
     query = update.callback_query
     await query.answer()
     
-    if query.data == "config_main":
-        await config_main_menu(query)
-    elif query.data == "config_quick":
-        await config_quick_setup(query)
-    elif query.data == "config_battery_type":
-        await config_battery_type(query)
-    elif query.data == "config_voltage":
-        await config_voltage(query)
-    elif query.data == "config_back":
-        await config_back(query)
-    elif query.data == "help_main":
-        await help_main(query)
-    elif query.data.startswith("quick_"):
-        await quick_setup_handler(query)
-    elif query.data.startswith("battery_"):
-        await battery_type_handler(query)
-    elif query.data.startswith("voltage_"):
-        await voltage_handler(query)
+    try:
+        data = query.data
+        
+        if data == "main_menu":
+            await show_main_menu(query)
+        elif data == "quick_setup":
+            await show_quick_setup(query)
+        elif data == "battery_type":
+            await show_battery_types(query)
+        elif data == "voltage":
+            await show_voltage_options(query)
+        elif data.startswith("battery_"):
+            await handle_battery_selection(query, data)
+        elif data.startswith("voltage_"):
+            await handle_voltage_selection(query, data)
+        elif data.startswith("quick_"):
+            await handle_quick_setup(query, data)
+        else:
+            await query.edit_message_text("❌ Неизвестная команда")
+            
+    except Exception as e:
+        logger.error(f"Ошибка в config_button: {e}")
+        await query.edit_message_text("❌ Произошла ошибка")
 
-async def config_main_menu(query):
-    """Главное меню конфигурации"""
+async def show_main_menu(query):
+    """Показать главное меню"""
     keyboard = [
-        [InlineKeyboardButton("🔋 Тип аккумулятора", callback_data="config_battery_type")],
-        [InlineKeyboardButton("⚡ Напряжение", callback_data="config_voltage")],
-        [InlineKeyboardButton("🔢 Количество элементов", callback_data="config_cell_count")],
-        [InlineKeyboardButton("⬅️ На главную", callback_data="config_back")]
+        [InlineKeyboardButton("⚙️ Настроить конфигурацию", callback_data="config")],
+        [InlineKeyboardButton("🔧 Быстрая настройка", callback_data="quick_setup")],
+        [InlineKeyboardButton("ℹ️ Помощь", callback_data="help")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        "⚙️ Настройка конфигурации балансировки:\n\n"
-        "Выберите параметр для настройки:",
+        "🔋 Battery Balancer Bot\n\nВыберите действие:",
         reply_markup=reply_markup
     )
 
-async def config_quick_setup(query):
+async def show_quick_setup(query):
     """Быстрая настройка"""
     keyboard = [
         [InlineKeyboardButton("🔋 Li-ion (3.7V)", callback_data="quick_liion")],
         [InlineKeyboardButton("🔋 LiPo (3.7V)", callback_data="quick_lipo")],
         [InlineKeyboardButton("🔋 LiFePO4 (3.2V)", callback_data="quick_lifepo4")],
-        [InlineKeyboardButton("⬅️ Назад", callback_data="config_main")]
+        [InlineKeyboardButton("⬅️ Назад", callback_data="main_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -73,14 +83,14 @@ async def config_quick_setup(query):
         reply_markup=reply_markup
     )
 
-async def config_battery_type(query):
-    """Настройка типа аккумулятора"""
+async def show_battery_types(query):
+    """Показать типы аккумуляторов"""
     keyboard = [
         [InlineKeyboardButton("🔋 Li-ion", callback_data="battery_liion")],
         [InlineKeyboardButton("🔋 LiPo", callback_data="battery_lipo")],
         [InlineKeyboardButton("🔋 LiFePO4", callback_data="battery_lifepo4")],
         [InlineKeyboardButton("🔋 NiMH", callback_data="battery_nimh")],
-        [InlineKeyboardButton("⬅️ Назад", callback_data="config_main")]
+        [InlineKeyboardButton("⬅️ Назад", callback_data="main_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -93,42 +103,25 @@ async def config_battery_type(query):
         reply_markup=reply_markup
     )
 
-async def config_voltage(query):
-    """Настройка напряжения"""
+async def show_voltage_options(query):
+    """Показать варианты напряжения"""
     keyboard = [
-        [InlineKeyboardButton("⚡ 3.7V (Li-ion/LiPo)", callback_data="voltage_37")],
-        [InlineKeyboardButton("⚡ 3.2V (LiFePO4)", callback_data="voltage_32")],
-        [InlineKeyboardButton("⚡ 1.2V (NiMH)", callback_data="voltage_12")],
-        [InlineKeyboardButton("🔢 Ввести вручную", callback_data="voltage_custom")],
-        [InlineKeyboardButton("⬅️ Назад", callback_data="config_main")]
+        [InlineKeyboardButton("⚡ 3.7V (Li-ion/LiPo)", callback_data="voltage_3.7")],
+        [InlineKeyboardButton("⚡ 3.2V (LiFePO4)", callback_data="voltage_3.2")],
+        [InlineKeyboardButton("⚡ 1.2V (NiMH)", callback_data="voltage_1.2")],
+        [InlineKeyboardButton("⬅️ Назад", callback_data="main_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
         "⚡ Настройка напряжения элемента:\n\n"
-        "Выберите стандартное напряжение или введите вручную:",
+        "Выберите стандартное напряжение:",
         reply_markup=reply_markup
     )
 
-async def quick_setup_handler(query):
-    """Обработчик быстрой настройки"""
-    battery_type = query.data.replace("quick_", "")
-    type_names = {
-        "liion": "Li-ion",
-        "lipo": "LiPo", 
-        "lifepo4": "LiFePO4"
-    }
-    
-    await query.edit_message_text(
-        f"✅ Быстрая настройка завершена!\n\n"
-        f"Тип аккумулятора: {type_names.get(battery_type, battery_type)}\n"
-        f"Напряжение элемента: {'3.7V' if battery_type in ['liion', 'lipo'] else '3.2V'}\n"
-        f"Балансировка настроена автоматически."
-    )
-
-async def battery_type_handler(query):
+async def handle_battery_selection(query, data):
     """Обработчик выбора типа аккумулятора"""
-    battery_type = query.data.replace("battery_", "")
+    battery_type = data.replace("battery_", "")
     type_names = {
         "liion": "Li-ion (литий-ионный)",
         "lipo": "LiPo (литий-полимерный)", 
@@ -136,50 +129,30 @@ async def battery_type_handler(query):
         "nimh": "NiMH (никель-металл-гидридный)"
     }
     
-    await query.edit_message_text(
-        f"✅ Тип аккумулятора установлен: {type_names.get(battery_type, battery_type)}"
-    )
+    battery_name = type_names.get(battery_type, battery_type)
+    await query.edit_message_text(f"✅ Тип аккумулятора установлен: {battery_name}")
 
-async def voltage_handler(query):
+async def handle_voltage_selection(query, data):
     """Обработчик выбора напряжения"""
-    voltage = query.data.replace("voltage_", "")
-    voltage_values = {
-        "37": "3.7V",
-        "32": "3.2V", 
-        "12": "1.2V",
-        "custom": "пользовательское"
+    voltage = data.replace("voltage_", "")
+    await query.edit_message_text(f"✅ Напряжение элемента установлено: {voltage}V")
+
+async def handle_quick_setup(query, data):
+    """Обработчик быстрой настройки"""
+    battery_type = data.replace("quick_", "")
+    type_names = {
+        "liion": "Li-ion",
+        "lipo": "LiPo", 
+        "lifepo4": "LiFePO4"
     }
     
-    await query.edit_message_text(
-        f"✅ Напряжение элемента установлено: {voltage_values.get(voltage, voltage)}"
-    )
-
-async def config_back(query):
-    """Возврат на главную"""
-    keyboard = [
-        [InlineKeyboardButton("⚙️ Настроить конфигурацию", callback_data="config_main")],
-        [InlineKeyboardButton("🔧 Быстрая настройка", callback_data="config_quick")],
-        [InlineKeyboardButton("ℹ️ Помощь", callback_data="help_main")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    battery_name = type_names.get(battery_type, battery_type)
+    voltage = "3.7V" if battery_type in ["liion", "lipo"] else "3.2V"
     
     await query.edit_message_text(
-        "🔋 Battery Balancer Bot\n\nВыберите действие:",
-        reply_markup=reply_markup
-    )
-
-async def help_main(query):
-    """Главное меню помощи"""
-    keyboard = [
-        [InlineKeyboardButton("📖 Основные команды", callback_data="help_commands")],
-        [InlineKeyboardButton("🔧 Настройка", callback_data="help_setup")],
-        [InlineKeyboardButton("⚠️ Безопасность", callback_data="help_safety")],
-        [InlineKeyboardButton("⬅️ На главную", callback_data="config_back")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        "ℹ️ Помощь по использованию бота:\n\n"
-        "Выберите раздел помощи:",
-        reply_markup=reply_markup
+        f"✅ Быстрая настройка завершена!\n\n"
+        f"• Тип аккумулятора: {battery_name}\n"
+        f"• Напряжение элемента: {voltage}\n"
+        f"• Балансировка настроена автоматически\n\n"
+        f"Теперь вы можете использовать настройки для балансировки."
     )
