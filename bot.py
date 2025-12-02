@@ -1,4 +1,3 @@
-
 import logging
 import csv
 import io
@@ -17,16 +16,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Создайте обработчик для файла
+file_handler = logging.FileHandler('battery_bot.log', encoding='utf-8')
+file_handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+
 class BatteryBalancer:
     def __init__(self):
         self.user_data = {}
     
     def validate_capacities(self, capacities: List[int]) -> Tuple[bool, str]:
         """Проверка корректности емкостей"""
-        if not capacities:
-            return False, "Список емкостей пуст"
-        
-        if len(capacities) == 0:
+        if not capacities or len(capacities) == 0:
             return False, "Не введено ни одной емкости"
         
         if any(cap <= 0 for cap in capacities):
@@ -71,122 +74,132 @@ class BatteryBalancer:
 
     def balance_batteries_repackr(self, capacities: List[int], series: int, parallel: int) -> List[Dict]:
         """Улучшенный алгоритм балансировки по принципу repackr"""
-        # Валидация входных данных
-        is_valid, error_msg = self.validate_capacities(capacities)
-        if not is_valid:
-            raise ValueError(f"Неверные данные емкостей: {error_msg}")
-        
-        is_valid, error_msg = self.validate_configuration(series, parallel)
-        if not is_valid:
-            raise ValueError(f"Неверная конфигурация: {error_msg}")
-        
-        total_cells = len(capacities)
-        cells_per_group = parallel
-        
-        if total_cells != series * parallel:
-            raise ValueError(f"Количество аккумуляторов ({total_cells}) не соответствует конфигурации {series}S{parallel}P")
-        
-        # Создаем массив объектов с емкостями
-        cells = [{'capacity': cap, 'index': i} for i, cap in enumerate(capacities)]
-        
-        # Сортируем по убыванию емкости
-        cells.sort(key=lambda x: x['capacity'], reverse=True)
-        
-        # Рассчитываем целевую емкость
-        total_capacity = sum(cell['capacity'] for cell in cells)
-        target_capacity = total_capacity / series
-        
-        best_solution = None
-        best_score = float('inf')
-        
-        # Пробуем несколько стратегий
-        for attempt in range(3):
-            test_groups = [{'cells': [], 'capacity': 0} for _ in range(series)]
-            available_cells = cells.copy()
+        try:
+            # Проверка на None значения
+            if capacities is None or series is None or parallel is None:
+                raise ValueError("Не все параметры заданы")
             
-            if attempt == 0:
-                # Стратегия 1: Равномерное распределение
-                for i, cell in enumerate(available_cells):
-                    group_idx = i % series
-                    if len(test_groups[group_idx]['cells']) < cells_per_group:
-                        test_groups[group_idx]['cells'].append(cell)
-                        test_groups[group_idx]['capacity'] += cell['capacity']
-            elif attempt == 1:
-                # Стратегия 2: Жадный алгоритм
-                available_cells.sort(key=lambda x: x['capacity'], reverse=True)
-                for cell in available_cells:
-                    best_group_idx = -1
-                    best_diff = float('inf')
+            # Валидация входных данных
+            is_valid, error_msg = self.validate_capacities(capacities)
+            if not is_valid:
+                raise ValueError(f"Неверные данные емкостей: {error_msg}")
+            
+            is_valid, error_msg = self.validate_configuration(series, parallel)
+            if not is_valid:
+                raise ValueError(f"Неверная конфигурация: {error_msg}")
+            
+            total_cells = len(capacities)
+            cells_per_group = parallel
+            
+            if total_cells != series * parallel:
+                raise ValueError(f"Количество аккумуляторов ({total_cells}) не соответствует конфигурации {series}S{parallel}P")
+            
+            # Создаем массив объектов с емкостями
+            cells = [{'capacity': cap, 'index': i} for i, cap in enumerate(capacities)]
+            
+            # Сортируем по убыванию емкости
+            cells.sort(key=lambda x: x['capacity'], reverse=True)
+            
+            # Рассчитываем целевую емкость
+            total_capacity = sum(cell['capacity'] for cell in cells)
+            target_capacity = total_capacity / series
+            
+            best_solution = None
+            best_score = float('inf')
+            
+            # Пробуем несколько стратегий
+            for attempt in range(3):
+                test_groups = [{'cells': [], 'capacity': 0} for _ in range(series)]
+                available_cells = cells.copy()
+                
+                if attempt == 0:
+                    # Стратегия 1: Равномерное распределение
+                    for i, cell in enumerate(available_cells):
+                        group_idx = i % series
+                        if len(test_groups[group_idx]['cells']) < cells_per_group:
+                            test_groups[group_idx]['cells'].append(cell)
+                            test_groups[group_idx]['capacity'] += cell['capacity']
+                elif attempt == 1:
+                    # Стратегия 2: Жадный алгоритм
+                    available_cells.sort(key=lambda x: x['capacity'], reverse=True)
+                    for cell in available_cells:
+                        best_group_idx = -1
+                        best_diff = float('inf')
+                        
+                        for j, group in enumerate(test_groups):
+                            if len(group['cells']) < cells_per_group:
+                                new_capacity = group['capacity'] + cell['capacity']
+                                diff = abs(new_capacity - target_capacity)
+                                if diff < best_diff:
+                                    best_diff = diff
+                                    best_group_idx = j
+                        
+                        if best_group_idx != -1:
+                            test_groups[best_group_idx]['cells'].append(cell)
+                            test_groups[best_group_idx]['capacity'] += cell['capacity']
+                else:
+                    # Стратегия 3: Парное распределение
+                    available_cells.sort(key=lambda x: x['capacity'], reverse=True)
+                    mid_point = len(available_cells) // 2
+                    large_cells = available_cells[:mid_point]
+                    small_cells = available_cells[mid_point:]
                     
-                    for j, group in enumerate(test_groups):
-                        if len(group['cells']) < cells_per_group:
-                            new_capacity = group['capacity'] + cell['capacity']
-                            diff = abs(new_capacity - target_capacity)
-                            if diff < best_diff:
-                                best_diff = diff
-                                best_group_idx = j
+                    # Распределяем большие аккумуляторы
+                    for i, cell in enumerate(large_cells):
+                        group_idx = i % series
+                        if len(test_groups[group_idx]['cells']) < cells_per_group:
+                            test_groups[group_idx]['cells'].append(cell)
+                            test_groups[group_idx]['capacity'] += cell['capacity']
                     
-                    if best_group_idx != -1:
-                        test_groups[best_group_idx]['cells'].append(cell)
-                        test_groups[best_group_idx]['capacity'] += cell['capacity']
-            else:
-                # Стратегия 3: Парное распределение
-                available_cells.sort(key=lambda x: x['capacity'], reverse=True)
-                mid_point = len(available_cells) // 2
-                large_cells = available_cells[:mid_point]
-                small_cells = available_cells[mid_point:]
+                    # Распределяем маленькие в обратном порядке
+                    for i, cell in enumerate(small_cells):
+                        group_idx = (series - 1 - (i % series))
+                        if len(test_groups[group_idx]['cells']) < cells_per_group:
+                            test_groups[group_idx]['cells'].append(cell)
+                            test_groups[group_idx]['capacity'] += cell['capacity']
                 
-                # Распределяем большие аккумуляторы
-                for i, cell in enumerate(large_cells):
-                    group_idx = i % series
-                    if len(test_groups[group_idx]['cells']) < cells_per_group:
-                        test_groups[group_idx]['cells'].append(cell)
-                        test_groups[group_idx]['capacity'] += cell['capacity']
+                # Оптимизация перестановками
+                for optimization_round in range(10):
+                    improved = False
+                    for i in range(series):
+                        for j in range(i + 1, series):
+                            for k in range(len(test_groups[i]['cells'])):
+                                for l in range(len(test_groups[j]['cells'])):
+                                    cell_a = test_groups[i]['cells'][k]
+                                    cell_b = test_groups[j]['cells'][l]
+                                    
+                                    current_dev = (abs(test_groups[i]['capacity'] - target_capacity) + 
+                                                 abs(test_groups[j]['capacity'] - target_capacity))
+                                    
+                                    new_cap_i = test_groups[i]['capacity'] - cell_a['capacity'] + cell_b['capacity']
+                                    new_cap_j = test_groups[j]['capacity'] - cell_b['capacity'] + cell_a['capacity']
+                                    new_dev = abs(new_cap_i - target_capacity) + abs(new_cap_j - target_capacity)
+                                    
+                                    if new_dev < current_dev:
+                                        test_groups[i]['cells'][k] = cell_b
+                                        test_groups[j]['cells'][l] = cell_a
+                                        test_groups[i]['capacity'] = new_cap_i
+                                        test_groups[j]['capacity'] = new_cap_j
+                                        improved = True
+                    
+                    if not improved:
+                        break
                 
-                # Распределяем маленькие в обратном порядке
-                for i, cell in enumerate(small_cells):
-                    group_idx = (series - 1 - (i % series))
-                    if len(test_groups[group_idx]['cells']) < cells_per_group:
-                        test_groups[group_idx]['cells'].append(cell)
-                        test_groups[group_idx]['capacity'] += cell['capacity']
-            
-            # Оптимизация перестановками
-            for optimization_round in range(10):
-                improved = False
-                for i in range(series):
-                    for j in range(i + 1, series):
-                        for k in range(len(test_groups[i]['cells'])):
-                            for l in range(len(test_groups[j]['cells'])):
-                                cell_a = test_groups[i]['cells'][k]
-                                cell_b = test_groups[j]['cells'][l]
-                                
-                                current_dev = (abs(test_groups[i]['capacity'] - target_capacity) + 
-                                             abs(test_groups[j]['capacity'] - target_capacity))
-                                
-                                new_cap_i = test_groups[i]['capacity'] - cell_a['capacity'] + cell_b['capacity']
-                                new_cap_j = test_groups[j]['capacity'] - cell_b['capacity'] + cell_a['capacity']
-                                new_dev = abs(new_cap_i - target_capacity) + abs(new_cap_j - target_capacity)
-                                
-                                if new_dev < current_dev:
-                                    test_groups[i]['cells'][k] = cell_b
-                                    test_groups[j]['cells'][l] = cell_a
-                                    test_groups[i]['capacity'] = new_cap_i
-                                    test_groups[j]['capacity'] = new_cap_j
-                                    improved = True
+                # Оценка качества
+                max_deviation = max(abs(group['capacity'] - target_capacity) for group in test_groups)
+                avg_deviation = sum(abs(group['capacity'] - target_capacity) for group in test_groups) / series
+                score = max_deviation * 0.6 + avg_deviation * 0.4
                 
-                if not improved:
-                    break
+                if score < best_score:
+                    best_score = score
+                    best_solution = [group.copy() for group in test_groups]
             
-            # Оценка качества
-            max_deviation = max(abs(group['capacity'] - target_capacity) for group in test_groups)
-            avg_deviation = sum(abs(group['capacity'] - target_capacity) for group in test_groups) / series
-            score = max_deviation * 0.6 + avg_deviation * 0.4
+            logger.info(f"Балансировка завершена: {series}S{parallel}P, {len(capacities)} аккумуляторов")
+            return best_solution or test_groups
             
-            if score < best_score:
-                best_score = score
-                best_solution = [group.copy() for group in test_groups]
-        
-        return best_solution or test_groups
+        except Exception as e:
+            logger.error(f"Ошибка в balance_batteries_repackr: {e}")
+            raise
 
     def calculate_statistics(self, groups: List[Dict], series: int, voltage: float) -> Dict:
         """Расчет статистики сборки"""
@@ -311,6 +324,40 @@ class BatteryBalancer:
 
 # Создаем экземпляр балансировщика
 balancer = BatteryBalancer()
+
+def get_help_text() -> str:
+    """Получить текст помощи"""
+    return """ℹ️ ПОМОЩЬ ПО ИСПОЛЬЗОВАНИЮ БОТА
+
+🔋 Этот бот помогает создать сбалансированную сборку аккумуляторов 18650.
+
+📋 КАК ПОЛЬЗОВАТЬСЯ:
+1. ⚙️ Настройте конфигурацию (S и P)
+2. 📝 Введите емкости всех аккумуляторов
+3. 📊 Рассчитайте оптимальное распределение
+4. 💾 Скачайте результаты в CSV
+
+🔧 КОМАНДЫ:
+/start - начать работу
+/reset - сбросить все данные
+/status - показать текущее состояние
+/cancel - отменить текущую операцию
+/help - показать эту справку
+
+📖 ОБОЗНАЧЕНИЯ:
+• 🔢 S - количество последовательных групп
+• 🔢 P - количество параллельных аккумуляторов в группе
+• 🔋 мАч - емкость аккумулятора
+• ⚖️ Отклонение - разница от средней емкости группы
+
+💡 ПРИМЕР:
+Для сборки 4S2P нужно 8 аккумуляторов.
+Введите их емкости, например: 2500 2550 2600 2450 2520 2480 2580 2420
+
+⚠️ ОГРАНИЧЕНИЯ:
+• Максимум 200 аккумуляторов в сборке
+• Емкости: 500-10000 мАч
+• Напряжение: 2.5-4.5 В"""
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик команды /start"""
@@ -539,15 +586,18 @@ async def calculate_handler(query, context):
     """Расчет сборки с прогресс-баром"""
     user_id = query.from_user.id
     
-    # Обработка неожиданных состояний
+    # Проверяем наличие данных пользователя
     if user_id not in balancer.user_data:
-        await start_callback(query, context)
+        await query.edit_message_text(
+            "❌ Данные не найдены. Начните с команды /start",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Начать заново", callback_data="back")]])
+        )
         return
-        
-    user_data = balancer.user_data.get(user_id, {})
+    
+    user_data = balancer.user_data[user_id]
     
     # Проверяем наличие всех необходимых данных
-    if not user_data.get('series') or not user_data.get('parallel'):
+    if user_data is None or not user_data.get('series') or not user_data.get('parallel'):
         await query.edit_message_text(
             "❌ Сначала настройте конфигурацию (S и P)",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⚙️ Настроить", callback_data="config")]])
@@ -656,42 +706,49 @@ async def calculate_handler(query, context):
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="config")]])
         )
 
+async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Отмена текущей операции"""
+    user_id = update.effective_user.id
+    
+    if user_id in balancer.user_data:
+        balancer.user_data[user_id]['step'] = 'config'
+    
+    await update.message.reply_text(
+        "✅ Текущая операция отменена. Вы возвращены в главное меню.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Главное меню", callback_data="back")]])
+    )
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показать текущее состояние"""
+    user_id = update.effective_user.id
+    
+    if user_id not in balancer.user_data:
+        await update.message.reply_text("❌ Нет активной сессии. Используйте /start")
+        return
+    
+    user_data = balancer.user_data[user_id]
+    
+    status_text = f"""📋 ТЕКУЩЕЕ СОСТОЯНИЕ:
+
+🔢 Последовательно (S): {user_data.get('series', 'не задано')}
+🔢 Параллельно (P): {user_data.get('parallel', 'не задано')}
+⚡ Напряжение: {user_data.get('voltage', 3.7)} В
+📊 Введено аккумуляторов: {len(user_data.get('capacities', []))} шт
+📈 Требуется аккумуляторов: {user_data.get('series', 0) * user_data.get('parallel', 0) if user_data.get('series') and user_data.get('parallel') else 'не задано'} шт"""
+
+    await update.message.reply_text(status_text)
+
 async def help_handler(query, context):
     """Помощь"""
-    help_text = """ℹ️ ПОМОЩЬ ПО ИСПОЛЬЗОВАНИЮ БОТА
-
-🔋 Этот бот помогает создать сбалансированную сборку аккумуляторов 18650.
-
-📋 КАК ПОЛЬЗОВАТЬСЯ:
-1. ⚙️ Настройте конфигурацию (S и P)
-2. 📝 Введите емкости всех аккумуляторов
-3. 📊 Рассчитайте оптимальное распределение
-4. 💾 Скачайте результаты в CSV
-
-🔧 КОМАНДЫ:
-/start - начать работу
-/reset - сбросить все данные
-/help - показать эту справку
-
-📖 ОБОЗНАЧЕНИЯ:
-• 🔢 S - количество последовательных групп
-• 🔢 P - количество параллельных аккумуляторов в группе
-• 🔋 мАч - емкость аккумулятора
-• ⚖️ Отклонение - разница от средней емкости группы
-
-💡 ПРИМЕР:
-Для сборки 4S2P нужно 8 аккумуляторов.
-Введите их емкости, например: 2500 2550 2600 2450 2520 2480 2580 2420
-
-⚠️ ОГРАНИЧЕНИЯ:
-• Максимум 200 аккумуляторов в сборке
-• Емкости: 500-10000 мАч
-• Напряжение: 2.5-4.5 В"""
-
     keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="back")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(help_text, reply_markup=reply_markup)
+    await query.edit_message_text(get_help_text(), reply_markup=reply_markup)
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработчик команды /help"""
+    keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="back")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(get_help_text(), reply_markup=reply_markup)
 
 async def download_csv_handler(query, context):
     """Скачивание CSV файла"""
@@ -741,7 +798,24 @@ async def start_callback(query, context):
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик текстовых сообщений с улучшенной валидацией"""
     user_id = update.effective_user.id
-    text = update.message.text.strip()
+    text = update.message.text.strip().lower()
+    
+    # Обработка команд
+    if text == '/cancel':
+        await cancel_command(update, context)
+        return
+    
+    if text == '/reset':
+        await reset_command(update, context)
+        return
+    
+    if text == '/status':
+        await status_command(update, context)
+        return
+    
+    if text == '/help':
+        await help_command(update, context)
+        return
     
     # Обработка неожиданных состояний - инициализация если данных нет
     if user_id not in balancer.user_data:
@@ -854,6 +928,8 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "🤔 Я не понял ваше сообщение. Используйте кнопки меню или команды:\n\n"
             "/start - начать работу\n"
             "/reset - сбросить настройки\n"
+            "/status - показать состояние\n"
+            "/cancel - отменить операцию\n"
             "/help - помощь"
         )
 
@@ -881,59 +957,52 @@ async def show_config_menu(update, context):
 
 Выберите параметр для настройки:"""
     
-    if isinstance(update, Update) and update.message:
-        await update.message.reply_text(config_text, reply_markup=reply_markup)
-    else:
+    # Просто используем try-except для определения типа
+    try:
+        # Если это CallbackQuery
         await update.edit_message_text(config_text, reply_markup=reply_markup)
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обработчик команды /help"""
-    # Инициализация данных пользователя если их нет
-    user_id = update.effective_user.id
-    if user_id not in balancer.user_data:
-        await start(update, context)
-        return
-    
-    # Создаем временный callback query для использования help_handler
-    class MockQuery:
-        def __init__(self, message):
-            self.message = message
-            self.from_user = message.from_user
-    
-    mock_query = MockQuery(update.message)
-    await help_handler(mock_query, context)
+    except AttributeError:
+        # Если это Update
+        await update.message.reply_text(config_text, reply_markup=reply_markup)
 
 def main() -> None:
     """Запуск бота"""
-    # Загружаем токен из переменных окружения
-    token = os.getenv('TELEGRAM_BOT_TOKEN')
-    
-    if not token:
-        logger.error("Не задан TELEGRAM_BOT_TOKEN в переменных окружения")
-        print("❌ ОШИБКА: Не задан токен бота!")
-        print("📝 Создайте файл .env с переменной TELEGRAM_BOT_TOKEN")
-        return
-    
-    application = Application.builder().token(token).build()
-    
-    # ... остальной код
-    
-    # Обработчики команд
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("reset", reset_command))
-    application.add_handler(CommandHandler("help", help_command))
-    
-    # Обработчики callback запросов (кнопок)
-    application.add_handler(CallbackQueryHandler(button_handler))
-    
-    # Обработчики текстовых сообщений
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
-    
-    # Запуск бота
-    logger.info("Бот запущен...")
-    print("✅ Бот успешно запущен!")
-    print("📱 Используйте команду /start в Telegram для начала работы")
-    application.run_polling()
+    try:
+        # Загружаем токен из переменных окружения
+        token = os.getenv('TELEGRAM_BOT_TOKEN')
+        
+        if not token:
+            logger.error("Не задан TELEGRAM_BOT_TOKEN в переменных окружения")
+            print("❌ ОШИБКА: Не задан токен бота!")
+            print("📝 Создайте файл .env с переменной TELEGRAM_BOT_TOKEN")
+            print("💡 Или экспортируйте переменную: export TELEGRAM_BOT_TOKEN='ваш_токен'")
+            return
+        
+        application = Application.builder().token(token).build()
+        
+        # Регистрация обработчиков
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("reset", reset_command))
+        application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(CommandHandler("status", status_command))
+        application.add_handler(CommandHandler("cancel", cancel_command))
+        
+        # Обработчики callback запросов (кнопок)
+        application.add_handler(CallbackQueryHandler(button_handler))
+        
+        # Обработчики текстовых сообщений
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
+        
+        # Запуск бота
+        logger.info("Бот запущен...")
+        print("✅ Бот успешно запущен!")
+        print("📱 Используйте команду /start в Telegram для начала работы")
+        
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        
+    except Exception as e:
+        logger.error(f"Ошибка при запуске бота: {e}")
+        print(f"❌ Критическая ошибка: {e}")
 
 if __name__ == "__main__":
     main()
